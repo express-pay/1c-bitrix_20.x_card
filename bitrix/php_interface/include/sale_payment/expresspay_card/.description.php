@@ -2,16 +2,16 @@
 use Bitrix\Main\Localization\Loc;
 Loc::loadMessages(__FILE__);
 
-$psTitle = Loc::getMessage("SALE_EXPRESSPAY_CARD_TITLE");
-$psDescription = Loc::getMessage("SALE_EXPRESSPAY_CARD_DESCRIPTION");
+$psTitle = GetMessage("SALE_EXPRESSPAY_CARD_TITLE");
+$psDescription = GetMessage("SALE_EXPRESSPAY_CARD_DESCRIPTION");
 
 	$url = ((!empty($_SERVER['HTTPS'])) ? 'https' : 'http') . '://' . $_SERVER['HTTP_HOST'];
 
 	$arPSCorrespondence = array(
 		"EXPRESSPAY_CARD_IS_TEST_API" => array(
 			"SORT" => 10,
-			"NAME" => "Работа в тестовом режиме",
-			"DESCR"	=> "Взаимодействие выполняется с тестовым стендом",
+			"NAME" => GetMessage("EXPRESSPAY_CARD_IS_TEST_API_NAME"),
+			"DESCR"	=> GetMessage("EXPRESSPAY_CARD_IS_TEST_API_DESCR"),
 			"INPUT" => array(
 				'TYPE' => 'Y/N'
 			),
@@ -22,22 +22,22 @@ $psDescription = Loc::getMessage("SALE_EXPRESSPAY_CARD_DESCRIPTION");
 		),
 		"EXPRESSPAY_CARD_TOKEN"	=> array(
 			"SORT" => 20,
-			"NAME"	=> "API-ключ (токен) доступа к API",
-			"DESCR"	=> "Задается в личном кабинете",
+			"NAME"	=> GetMessage("EXPRESSPAY_CARD_TOKEN_NAME"),
+			"DESCR"	=> GetMessage("EXPRESSPAY_CARD_TOKEN_DESCR"),
 			"VALUE"	=> "",
 			"TYPE"	=> ""
 		),
 		"EXPRESSPAY_CARD_SERVICE_ID"	=> array(
 			"SORT" => 30,
-			"NAME"	=> "Номер услуги в сервисе \"Экспресс Платежи\"",
-			"DESCR"	=> "Можно узнать в личном кабинете в настройках услуги",
+			"NAME"	=> GetMessage("EXPRESSPAY_CARD_SERVICE_ID_NAME"),
+			"DESCR"	=> GetMessage("EXPRESSPAY_CARD_SERVICE_ID_DESCR"),
 			"VALUE"	=> "",
 			"TYPE"	=> ""
 		),
 		"EXPRESSPAY_CARD_SECRET_WORD"	=> array(
 			"SORT" => 40,
-			"NAME"	=> "Секретное слово для цифровой подписи",
-			"DESCR"	=> "Задается в личном кабинете",
+			"NAME"	=> GetMessage("EXPRESSPAY_CARD_SECRET_WORD_NAME"),
+			"DESCR"	=> GetMessage("EXPRESSPAY_CARD_SECRET_WORD_DESCR"),
 			"DEFAULT" => array(
 				"PROVIDER_VALUE" => "",
 				"PROVIDER_KEY" => "VALUE"
@@ -45,17 +45,17 @@ $psDescription = Loc::getMessage("SALE_EXPRESSPAY_CARD_DESCRIPTION");
 		),
 		"EXPRESSPAY_CARD_NOTIFICATION_URL"	=> array(
 			"SORT" => 45,
-			"NAME"	=> "Адрес для получения уведомлений",
-			"DESCR"	=> "Необходим для обновления статуса счета при оплате",
+			"NAME"	=> GetMessage("EXPRESSPAY_CARD_NOTIFICATION_URL_NAME"),
+			"DESCR"	=> GetMessage("EXPRESSPAY_CARD_NOTIFICATION_URL_DESCR"),
 			"DEFAULT" => array(
-				"PROVIDER_VALUE" => $url. "/bitrix/tools/expresspay_notify.php",
+				"PROVIDER_VALUE" => $url. "/bitrix/tools/expresspay_notify/expresspay_notify.php",
 				"PROVIDER_KEY" => "VALUE"
 			)
 		),
 		"IS_USE_SIGNATURE_FROM_NOTIFICATION" => array(
 			"SORT" => 50,
-			"NAME" => "Использовать цифровую подпись при получении уведомлений",
-			"DESCR"	=> "Значение должно соотвествовать значению, установленному в личном кабинете",
+			"NAME" => GetMessage("IS_USE_SIGNATURE_FROM_NOTIFICATION_NAME"),
+			"DESCR"	=> GetMessage("IS_USE_SIGNATURE_FROM_NOTIFICATION_DESCR"),
 			"INPUT" => array(
 				'TYPE' => 'Y/N'
 			),
@@ -66,8 +66,8 @@ $psDescription = Loc::getMessage("SALE_EXPRESSPAY_CARD_DESCRIPTION");
 		),
 		"SECRET_WORD_FROM_NOTIFICATION"	=> array(
 			"SORT" => 55,
-			"NAME"	=> "Секретное слово для цифровой подписи уведомлений",
-			"DESCR"	=> "Задается в личном кабинете",
+			"NAME"	=> GetMessage("SECRET_WORD_FROM_NOTIFICATION_NAME"),
+			"DESCR"	=> GetMessage("SECRET_WORD_FROM_NOTIFICATION_DESCR"),
 			"DEFAULT" => array(
 				"PROVIDER_VALUE" => "",
 				"PROVIDER_KEY" => "VALUE"
@@ -75,10 +75,10 @@ $psDescription = Loc::getMessage("SALE_EXPRESSPAY_CARD_DESCRIPTION");
 		),
 		"EXPRESSPAY_CARD_INFO_TEMPLATE"	=> array(
 			"SORT" => 60,
-			"NAME"	=> "Шаблон назначения платежа",
-			"DESCR"	=> "Не должен превышать 1024 символа",
+			"NAME"	=> GetMessage("EXPRESSPAY_CARD_INFO_TEMPLATE_NAME"),
+			"DESCR"	=> GetMessage("EXPRESSPAY_CARD_INFO_TEMPLATE_DESCR"),
 			"DEFAULT" => array(
-				"PROVIDER_VALUE" => "Оплата заказа ##ORDER_ID##",
+				"PROVIDER_VALUE" => GetMessage("EXPRESSPAY_CARD_INFO_TEMPLATE_PROVIDER_VALUE"),
 				"PROVIDER_KEY" => "VALUE"
 			)
 		),

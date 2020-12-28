@@ -3,12 +3,18 @@ define("NO_KEEP_STATISTIC", true);
 define("NOT_CHECK_PERMISSIONS", true);
 require($_SERVER["DOCUMENT_ROOT"]."/bitrix/modules/main/include/prolog_before.php");
 CModule::IncludeModule("sale");
+use Bitrix\Main\Localization\Loc;
 
 if (!defined("B_PROLOG_INCLUDED") || B_PROLOG_INCLUDED !== true) die();
 
 log_info('payment','Begin payment process');
 
-if ($_SERVER['REQUEST_METHOD'] === 'GET') {
+$uri = $_SERVER['REQUEST_URI'];
+$uri = explode("/", $uri);
+$isSet = array_search('make', $uri);
+
+
+if ($_SERVER['REQUEST_METHOD'] === 'GET' && $isSet != false) {
 
 	log_info('payment','GET');
 	if(isset($_REQUEST['result']))
@@ -22,8 +28,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
 			$inv_id = $_REQUEST['ExpressPayAccountNo'];
 			$out_summ = $_REQUEST['ExpressPayAmount'];
 
-			$invoice_template = 'Счет успешно оплачен.<br/>
-						Сумма оплаты: <b>##SUM## BYN</b><br />';
+			$invoice_template = Loc::getMessage('EXPRESSPAY_CARD_INVOICE_TEMPLATE');
 															
 			$invoice_description = str_replace("##SUM##", $out_summ, $invoice_template);
 				
@@ -31,12 +36,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
 
 			log_info('payment','result: ' . $result);
 
-			echo $result;
+			echo htmlspecialcharsBack ($result);
 		}
 		else
 		{
 			log_info('payment','FAIL REQUEST: ' . json_encode($_REQUEST));
-			echo 'При попытке оплаты произошла ошибка.';
+			echo Loc::getMessage("EXPRESSPAY_CARD_ERROR_INVOICE");
 		}
 	}
 	else
@@ -61,19 +66,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
             $button .= "<input type='hidden' name='$key' value='$value'/>";
         }
 
-        $button .= '<input type="submit" class="checkout_button" name="submit_button" value="Оплатить счет" />';
+        $button .= '<input type="submit" class="checkout_button" name="submit_button" value="'.Loc::getMessage("EXPRESSPAY_CARD_BUTTON_NAME").'" />';
 		$button .= '</form>';
 		
-		echo $button;
+		echo htmlspecialcharsBack ($button);
 	}
 	
 }
 
 function getInvoiceParam()
 {
-	$inv_id = $GLOBALS["SALE_INPUT_PARAMS"]["ORDER"]["ID"];//Номер заказа
+	$inv_id = $GLOBALS["SALE_INPUT_PARAMS"]["ORDER"]["ID"];
 	$shouldPay = (strlen(CSalePaySystemAction::GetParamValue("SHOULD_PAY", '')) > 0) ? CSalePaySystemAction::GetParamValue("SHOULD_PAY", 0) : $GLOBALS["SALE_INPUT_PARAMS"]["ORDER"]["SHOULD_PAY"];
-	$out_summ = number_format(floatval($shouldPay), 2, ',', '');//Формирование суммы с 2 числами после ","
+	$out_summ = number_format(floatval($shouldPay), 2, ',', '');
 
 	$token = CSalePaySystemAction::GetParamValue("EXPRESSPAY_CARD_TOKEN");
 	$secret_word = CSalePaySystemAction::GetParamValue("EXPRESSPAY_CARD_SECRET_WORD");
