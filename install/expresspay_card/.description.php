@@ -9,6 +9,54 @@ Loc::loadMessages(__FILE__);
 $request = \Bitrix\Main\Application::getInstance()->getContext()->getRequest();
 $protocol = $request->isHttps() ? 'https://' : 'http://';
 
+// Доверенный хост только из настроек; никакого fallback на заголовок Host
+$currentHost = trim((string)\Bitrix\Main\Config\Option::get('main', 'server_name'));
+if (empty($currentHost)) {
+	$currentHost = '';
+}
+
+$notificationWarning = '';
+$signatureWarning = '';
+if (!empty($_REQUEST['ID']) && Loader::includeModule('sale')) {
+	$psId = (int)$_REQUEST['ID'];
+	$dbRes = \CSalePaySystemAction::GetList([], ['PAY_SYSTEM_ID' => $psId]);
+	$ps = $dbRes->Fetch();
+	if (!empty($ps)) {
+		$params = [];
+		if (!empty($ps['PARAMS'])) {
+			$params = is_array($ps['PARAMS']) ? $ps['PARAMS'] : unserialize($ps['PARAMS'], ['allowed_classes' => false]);
+		}
+		$savedUrl = $params['CARD_NOTIFICATION_URL']['VALUE'] ?? '';
+		if (!empty($savedUrl)) {
+			$parsedUrl = parse_url($savedUrl);
+			$savedHost = $parsedUrl['host'] ?? '';
+			if (!empty($savedHost) && strtolower($savedHost) !== strtolower($currentHost)) {
+				$notificationWarning = '<div class="adm-info-message-wrap adm-info-message-red"><div class="adm-info-message"><div class="adm-info-message-title">' . Loc::getMessage('CARD_NOTIFICATION_URL_WARNING') . '</div><div>' . Loc::getMessage('CARD_NOTIFICATION_URL_WARNING_DETAIL', ['#URL#' => htmlspecialcharsbx($savedUrl), '#HOST#' => htmlspecialcharsbx($currentHost)]) . '</div></div></div>';
+			}
+		}
+		$isUseSignatureValue = $params['CARD_IS_USE_SIGNATURE_FROM_NOTIFICATION']['VALUE'] ?? null;
+		$isUseSignature = ($isUseSignatureValue === 'Y' || $isUseSignatureValue === 1 || $isUseSignatureValue === '1') ? 'Y' : 'N';
+		$secretWord = $params['CARD_SECRET_WORD_FROM_NOTIFICATION']['VALUE'] ?? '';
+		if ($isUseSignature === 'Y' && empty($secretWord)) {
+			$signatureWarning = '<div class="adm-info-message-wrap adm-info-message-red"><div class="adm-info-message"><div class="adm-info-message-title">' . Loc::getMessage('CARD_SIGNATURE_CONFIG_WARNING') . '</div><div>' . Loc::getMessage('CARD_SIGNATURE_CONFIG_WARNING_DETAIL') . '</div></div></div>';
+		}
+		if ($isUseSignatureValue !== null && $isUseSignature !== 'Y') {
+			$signatureWarning .= '<div class="adm-info-message-wrap adm-info-message-red"><div class="adm-info-message"><div class="adm-info-message-title">' . Loc::getMessage('CARD_SIGNATURE_DISABLED_WARNING') . '</div></div></div>';
+		}
+	}
+}
+
+if (!empty($notificationWarning) || !empty($signatureWarning)) {
+	echo '<div style="margin-bottom:15px;">';
+	if (!empty($notificationWarning)) {
+		echo $notificationWarning;
+	}
+	if (!empty($signatureWarning)) {
+		echo $signatureWarning;
+	}
+	echo '</div>';
+}
+
 $isAvailable = PaySystem\Manager::HANDLER_AVAILABLE_TRUE;
 
 $portalZone = Loader::includeModule('intranet') ? CIntranetUtils::getPortalZone() : '';
@@ -69,7 +117,7 @@ $data = [
 			"NAME"	=> Loc::getMessage("CARD_NOTIFICATION_URL_NAME"),
 			"DESCRIPTION"	=> Loc::getMessage("CARD_NOTIFICATION_URL_DESCR"),
 			"DEFAULT" => [
-				"PROVIDER_VALUE" => $protocol.$request->getHttpHost().'/bitrix/tools/sale_ps_result.php',
+				"PROVIDER_VALUE" => $protocol.$currentHost.'/bitrix/tools/sale_ps_result.php',
 				"PROVIDER_KEY" => "VALUE"
 			],
 		],
@@ -81,7 +129,7 @@ $data = [
 				'TYPE' => 'Y/N'
 			],
 			'DEFAULT' => [
-				"PROVIDER_VALUE" => "N",
+				"PROVIDER_VALUE" => "Y",
 				"PROVIDER_KEY" => "INPUT"
 			],
 		],

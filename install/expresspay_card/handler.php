@@ -111,7 +111,8 @@ class ExpressPay_CardHandler extends PaySystem\ServiceHandler
 		$result = $this->send(self::SEND_METHOD_HTTP_POST, $url, $request_params);
 
 		if (isset($result->getData()['Errors'])) {
-			$this->setExtraParams(['message' => $result->getData()['Errors'][0]]);
+			PaySystem\Logger::addDebugInfo(__CLASS__ . ': API errors: ' . print_r($result->getData()['Errors'], 1));
+			$this->setExtraParams(['message' => Loc::getMessage('SALE_HPS_EXPRESSPAY_CARD_ERROR_GENERAL')]);
 		} else if (isset($result->getData()['FormUrl'])) {
 			LocalRedirect($result->getData()['FormUrl'], true);
 		}
@@ -186,7 +187,42 @@ class ExpressPay_CardHandler extends PaySystem\ServiceHandler
 		$serviceId = $this->getBusinessValue($payment, 'CARD_SERVICE_ID');
 		$info = str_replace('##ORDER_ID##', $order_id, $this->getBusinessValue($payment, 'CARD_INFO_TEMPLATE'));
 
-		$url = ((!empty($_SERVER['HTTPS'])) ? 'https' : 'http') . '://' . $_SERVER['HTTP_HOST'] . $_SERVER['REQUEST_URI'];
+		// Доверенный хост только из настроек; никакого fallback на заголовок Host
+		$currentHost = trim((string)\Bitrix\Main\Config\Option::get('main', 'server_name'));
+
+		$returnParams = ['result' => 'success'];
+		$failParams = ['result' => 'fail'];
+
+		if ($currentHost === '' || !preg_match('/^[a-z0-9.\-]+(:\d+)?$/i', $currentHost)) {
+			// HTTP_HOST подконтролен клиенту — используем относительный URL
+			PaySystem\Logger::addDebugInfo(__CLASS__ . ': main:server_name is not configured — using relative return URL');
+
+			$path = '/bitrix/tools/sale_ps_result.php';
+			$returnUrl = $path . '?' . http_build_query($returnParams);
+			$failUrl   = $path . '?' . http_build_query($failParams);
+		} else {
+			$protocol = 'https://';   // ← принудительно https
+
+			// Сверка с allowlist доменов магазина
+			$trustedHosts = array_filter(array_map('trim', explode(",",
+				(string)\Bitrix\Main\Config\Option::get("main", "trusted_hosts"))));
+
+			if ($trustedHosts && !in_array(strtolower($currentHost), array_map('strtolower', $trustedHosts), true)) {
+				throw new Main\SystemException('Untrusted server_name for payment return URL');
+			}
+
+			$requestHost = $_SERVER['HTTP_HOST'] ?? '';
+			if ($requestHost !== '' && strcasecmp($requestHost, $currentHost) !== 0) {
+				PaySystem\Logger::addDebugInfo(sprintf(
+					'%s: Host mismatch. HTTP_HOST=%s, trusted_host=%s',
+					__CLASS__, $requestHost, $currentHost
+				));
+			}
+
+			$path = '/bitrix/tools/sale_ps_result.php';
+			$returnUrl = $protocol . $currentHost . $path . '?' . http_build_query($returnParams);
+			$failUrl   = $protocol . $currentHost . $path . '?' . http_build_query($failParams);
+		}
 
 		$request_params = array(
 			'ServiceId'         => $serviceId,
@@ -194,8 +230,8 @@ class ExpressPay_CardHandler extends PaySystem\ServiceHandler
 			'Amount'            => $out_summ,
 			'Currency'          => $this->getCurrencyISOCode($payment->getField('CURRENCY')),
 			'ReturnType'        => 'json',
-			'ReturnUrl'         => $url."&result=success" ,
-			'FailUrl'           => $url."&result=fail",
+			'ReturnUrl'         => $returnUrl,
+			'FailUrl'           => $failUrl,
 			'Expiration'        => '',
 			'Info'              => $info,
 		);
@@ -270,7 +306,12 @@ class ExpressPay_CardHandler extends PaySystem\ServiceHandler
 		if ($method === self::SEND_METHOD_HTTP_GET) {
 			$response = $httpClient->get($url);
 		} else {
-			PaySystem\Logger::addDebugInfo(__CLASS__ . ': request data: ' . print_r($params, 1));
+			PaySystem\Logger::addDebugInfo(__CLASS__ . ': request data: ' . print_r([
+				'ServiceId' => $params['ServiceId'] ?? null,
+				'AccountNo' => $params['AccountNo'] ?? null,
+				'Amount'    => $params['Amount'] ?? null,
+				'Currency'  => $params['Currency'] ?? null,
+			], 1));
 
 			$response = $httpClient->post($url, $params);
 		}
@@ -284,7 +325,7 @@ class ExpressPay_CardHandler extends PaySystem\ServiceHandler
 			return $result;
 		}
 
-		PaySystem\Logger::addDebugInfo(__CLASS__ . ': response data: ' . $response);
+		PaySystem\Logger::addDebugInfo(__CLASS__ . ': response received, length: ' . strlen((string)$response));
 
 		$response = static::decode($response);
 		if ($response) {
@@ -342,25 +383,68 @@ class ExpressPay_CardHandler extends PaySystem\ServiceHandler
 	{
 		$result = new ServiceResult();
 
-		$data = $request->getPost("Data");
-		$signature = $request->getPost("Signature");
+		$rawData   = (string)$request->getPost("Data");
+		$signature = trim((string)$request->getPost("Signature"));
 
-		$data = static::decode($data);
+		$data = static::decode($rawData);
 
-		if($data['CmdType'] == 3){
-			if($data['Status'] == 3 || $data['Status'] == 6) {
+		if (!is_array($data)) {
+			$result->addError(PaySystem\Error::create(Loc::getMessage('SALE_HPS_EXPRESSPAY_CARD_INVALID_NOTIFICATION_DATA')));
+			return $result;
+		}
 
-				if ($this->isUseSignatureForNotif() && isset($signature)){
-					if ($this->computeNotifSignature($request->getPost("Data")) !== $signature){
-						$result->addError(PaySystem\Error::create(Loc::getMessage('SALE_HPS_EXPRESSPAY_CARD_WRONG_SIGNATURE')));
-					}
+		$cmdType = filter_var($data['CmdType'] ?? null, FILTER_VALIDATE_INT);
+		$status  = filter_var($data['Status'] ?? null, FILTER_VALIDATE_INT);
 
-				}
+		if ($cmdType === false || $status === false) {
+			$result->addError(PaySystem\Error::create(Loc::getMessage('SALE_HPS_EXPRESSPAY_CARD_INVALID_NOTIFICATION_DATA')));
+			return $result;
+		}
 
-				$result->setOperationType(PaySystem\ServiceResult::MONEY_COMING);
-				$result->setPsData($this->getPaymentField($data));
+		if ($cmdType === 3 && ($status === 3 || $status === 6)) {
 
+			// Подпись проверяется ВСЕГДА — fail-closed
+			$computedSignature = $this->computeNotifSignature($rawData);
+
+			if ($computedSignature === null) {
+				PaySystem\Logger::addDebugInfo(__CLASS__ . ': ' . Loc::getMessage('SALE_HPS_EXPRESSPAY_CARD_EMPTY_SECRET_CONFIG_ERROR'));
+				$result->addError(PaySystem\Error::create(Loc::getMessage('SALE_HPS_EXPRESSPAY_CARD_EMPTY_SECRET_CONFIG_ERROR')));
+				return $result;
 			}
+
+			if ($signature === '' || !hash_equals($computedSignature, strtoupper($signature))) {
+				PaySystem\Logger::addDebugInfo(sprintf(
+					'%s: rejected unsigned/invalid notification for payment %d',
+					__CLASS__, $payment->getId()
+				));
+				$result->addError(PaySystem\Error::create(Loc::getMessage('SALE_HPS_EXPRESSPAY_CARD_WRONG_SIGNATURE')));
+				return $result;
+			}
+
+			$notificationAccountNo = filter_var($data['AccountNo'] ?? null, FILTER_VALIDATE_INT);
+			if ($notificationAccountNo === false || $notificationAccountNo !== $payment->getId()) {
+				PaySystem\Logger::addDebugInfo(sprintf(
+					'%s: AccountNo mismatch. Notification=%s, Payment=%d',
+					__CLASS__, var_export($data['AccountNo'] ?? null, true), $payment->getId()
+				));
+				$result->addError(PaySystem\Error::create(Loc::getMessage('SALE_HPS_EXPRESSPAY_CARD_PAYMENT_MISMATCH')));
+				return $result;
+			}
+
+			if ($payment->isPaid()) {
+				$result->addError(PaySystem\Error::create(Loc::getMessage('SALE_HPS_EXPRESSPAY_CARD_PAYMENT_ALREADY_PAID')));
+				return $result;
+			}
+
+			$notificationAmount = PriceMaths::roundPrecision((float)str_replace(',', '.', $data['Amount']));
+			$expectedSum = PriceMaths::roundPrecision($payment->getSum());
+			if ($notificationAmount !== $expectedSum) {
+				$result->addError(PaySystem\Error::create(Loc::getMessage('SALE_HPS_EXPRESSPAY_CARD_AMOUNT_MISMATCH')));
+				return $result;
+			}
+
+			$result->setOperationType(PaySystem\ServiceResult::MONEY_COMING);
+			$result->setPsData($this->getPaymentField($data));
 		}
 
 		return $result;
@@ -406,15 +490,11 @@ class ExpressPay_CardHandler extends PaySystem\ServiceHandler
 	 */
 	private function computeNotifSignature($json)
 	{
-    	$hash = NULL;
-		$secretWord = trim($this->getSecretWordForNotif());
-	
-    	if (empty($secretWord))
-			$hash = strtoupper(hash_hmac('sha1', $json, ""));
-    	else
-        	$hash = strtoupper(hash_hmac('sha1', $json, $secretWord));
-
-    	return $hash;
+		$secretWord = $this->getSecretWordForNotif();
+		if (empty($secretWord)) {
+			return null;
+		}
+		return strtoupper(hash_hmac('sha1', $json, $secretWord));
 	}
 
 	/**
@@ -466,16 +546,7 @@ class ExpressPay_CardHandler extends PaySystem\ServiceHandler
 	 * @param Payment $payment
 	 * @return bool
 	 */
-	private function isUseSignatureForNotif(Payment $payment = null): bool
-	{
-		return ($this->getBusinessValue($payment, 'CARD_IS_USE_SIGNATURE_FROM_NOTIFICATION') === 'Y');
-	}
-
-	/**
-	 * @param Payment $payment
-	 * @return bool
-	 */
-	private function getSecretWordForNotif(Payment $payment = null): bool
+	private function getSecretWordForNotif(Payment $payment = null)
 	{
 		return $this->getBusinessValue($payment, 'CARD_SECRET_WORD_FROM_NOTIFICATION');
 	}
